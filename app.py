@@ -2,6 +2,10 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import plotly.express as px
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
+import numpy as np
 
 def get_data(query):
     conn = sqlite3.connect('apple_apps.db')
@@ -9,7 +13,7 @@ def get_data(query):
     conn.close()
     return df
 
-st.set_page_config(page_title="Chris' App Insights", layout="wide")
+st.set_page_config(page_title="AppStore Insights", layout="wide")
 st.title("App Store Analytics Dashboard")
 
 # --- SIDEBAR ---
@@ -53,7 +57,7 @@ st.subheader("📊 Genre-Verteilung")
 genre_counts = df['Primary_Genre'].value_counts().reset_index()
 genre_counts.columns = ['Genre', 'Anzahl']
 
-# Hier ist die Änderung: Balken statt Torte für bessere Übersicht
+# Balken statt Torte für bessere Übersicht
 fig_bar = px.bar(
     genre_counts.head(15), 
     x='Anzahl', 
@@ -104,22 +108,108 @@ if search_query:
         st.error(f"Keine App gefunden, die '{search_query}' enthält.")
 
 
-# --- MODULE 6: HIDDEN GEMS (Geheimtipps) ---
+# --- MODULE 6: HIDDEN GEMS (Geheimtipps - Unabhängig vom Hauptfilter) ---
 st.divider()
 st.subheader("💎 Echte Geheimtipps")
-st.write("Apps mit perfektem Rating, die noch nicht jeder kennt.")
+st.write("Apps mit perfektem Rating, die noch nicht jeder kennt (unabhängig von den obigen Filtern).")
 
-# Wir filtern den bestehenden DataFrame nach unseren Kriterien
-hidden_gems = df[
-    (df['Average_User_Rating'] == 5.0) & 
-    (df['Reviews'] >= 500) & 
-    (df['Reviews'] <= 10000)
-]
+# Wir machen eine eigene kleine Abfrage für die Geheimtipps
+gem_query = """
+SELECT App_Name, Reviews, Average_User_Rating, Primary_Genre 
+FROM apps 
+WHERE Average_User_Rating = 5.0 
+AND Reviews BETWEEN 500 AND 10000
+ORDER BY Reviews DESC
+LIMIT 10
+"""
+hidden_gems_df = get_data(gem_query)
 
-if not hidden_gems.empty:
-    # Wir zeigen die Top 5 Geheimtipps sortiert nach der höchsten Review-Zahl in diesem Bereich
-    st.table(hidden_gems.nlargest(5, 'Reviews')[['App_Name', 'Reviews', 'Primary_Genre']])
-    st.success(f"Gefunden: {len(hidden_gems)} Apps mit perfektem 5-Sterne Rating!")
+if not hidden_gems_df.empty:
+    st.table(hidden_gems_df[['App_Name', 'Reviews', 'Primary_Genre']])
+    st.success(f"Diese Apps haben eine perfekte Bewertung, sind aber noch echte Entdeckungen.")
 else:
-    st.info("Momentan keine Geheimtipps in dieser Filter-Auswahl gefunden.")
-st.info("💡 Alle Daten werden live aus der SQL-Datenbank gefiltert.")
+    st.info("Momentan keine Apps mit exakt diesen Kriterien in der Datenbank.")
+
+
+# --- MODULE 7: ML PROGNOSE (Entkoppelt vom Hauptfilter) ---
+st.divider()
+st.subheader("🤖 Professionelle Rating-Prognose")
+st.write("Dieses Modell lernt aus dem *gesamten* Datensatz, um Trends objektiv vorherzusagen.")
+
+# 1. Daten entkoppelt abfragen
+# Wir holen uns alle Apps, um die volle Varianz des Marktes zu haben
+@st.cache_data # Damit wir nicht bei jedem Klick die ganze DB laden
+def get_ml_base_data():
+    query_all = "SELECT Price, Size_MB, Average_User_Rating FROM apps"
+    return get_data(query_all).dropna()
+
+full_ml_data = get_ml_base_data()
+
+if not full_ml_data.empty:
+    # Benutzereingaben
+    c_ml1, c_ml2 = st.columns(2)
+    u_price = c_ml1.number_input("Dein Preis (€)", 0.0, 50.0, 0.0, step=0.99, key="ml_p_final")
+    u_size = c_ml2.number_input("Deine Größe (MB)", 1.0, 3000.0, 150.0, step=10.0, key="ml_s_final")
+
+    if st.button("Rating auf Basis des Gesamtmarkts berechnen"):
+        # Pipeline Aufbau
+        model_pipe = Pipeline([
+            ('scaler', StandardScaler()),
+            ('regressor', LinearRegression())
+        ])
+        
+        # Training auf dem VOLLSTÄNDIGEN Datensatz
+        X_train = full_ml_data[['Price', 'Size_MB']]
+        y_train = full_ml_data['Average_User_Rating']
+        model_pipe.fit(X_train, y_train)
+        
+        # Vorhersage
+        X_new = pd.DataFrame([[u_price, u_size]], columns=['Price', 'Size_MB'])
+        prediction = model_pipe.predict(X_new)[0]
+        
+        # Clipping (0-5 Sterne)
+        final_rating = max(0.0, min(5.0, prediction))
+        
+        st.write("---")
+        st.metric("Prognostiziertes Rating", f"{final_rating:.2f} ⭐")
+        
+        # Analyse der Koeffizienten (Was hat das Modell gelernt?)
+        coeffs = model_pipe.named_steps['regressor'].coef_
+        st.write("**Statistischer Trend im Gesamtmarkt:**")
+        
+        # Erklärung der Trends
+        p_trend = "sinkt" if coeffs[0] < 0 else "steigt"
+        s_trend = "sinkt" if coeffs[1] < 0 else "steigt"
+        
+        st.write(f"* Mit höherem **Preis** {p_trend} das erwartete Rating tendenziell.")
+        st.write(f"* Mit zunehmender **Größe** {s_trend} das erwartete Rating tendenziell.")
+else:
+    st.error("Datenbank konnte für das ML-Modell nicht geladen werden.")
+
+import plotly.express as px
+
+# --- MODULE 8: MARKT-SEGMENTIERUNG (Boxplot) ---
+st.divider()
+st.subheader("📊 Qualitäts-Check pro Genre")
+st.write("Wie stabil sind die Bewertungen in den verschiedenen Kategorien?")
+
+# Wir nehmen die Top 10 Genres nach Anzahl der Apps, damit es übersichtlich bleibt
+top_genres = df['Primary_Genre'].value_counts().nlargest(10).index
+filtered_df = df[df['Primary_Genre'].isin(top_genres)]
+
+fig_box = px.box(
+    filtered_df, 
+    x='Primary_Genre', 
+    y='Average_User_Rating',
+    color='Primary_Genre',
+    title="Rating-Verteilung der Top 10 Genres",
+    points="outliers" # Zeigt uns die besonders schlechten/guten Apps
+)
+
+st.plotly_chart(fig_box, use_container_width=True)
+
+st.info("""
+**Interpretationshilfe:** - Die Box zeigt, wo die mittleren 50% der Apps liegen. 
+- Ein kurzer Kasten bedeutet: Die Nutzer sind sich einig. 
+- Viele Punkte außerhalb (Outliers) bedeuten: Es gibt in diesem Genre extreme Qualitätsunterschiede.
+""")
