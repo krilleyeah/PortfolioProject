@@ -186,8 +186,6 @@ if not full_ml_data.empty:
 else:
     st.error("Datenbank konnte für das ML-Modell nicht geladen werden.")
 
-import plotly.express as px
-
 # --- MODULE 8: MARKT-SEGMENTIERUNG (Boxplot) ---
 st.divider()
 st.subheader("📊 Qualitäts-Check pro Genre")
