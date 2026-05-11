@@ -66,38 +66,40 @@ fig_bar = px.bar(
 fig_bar.update_layout(yaxis={'categoryorder':'total ascending'})
 st.plotly_chart(fig_bar, use_container_width=True)
 
-# --- MODULE 5: APP-SUCHE (Erweitert) ---
+# --- MODULE 5: APP-SUCHE (Erweitert & Sortiert) ---
 st.divider()
 st.subheader("🔍 Spezifische App-Details")
 
-# WICHTIG: Hier wird die Variable definiert, damit kein NameError auftritt
+# Das Eingabefeld in der Sidebar
 search_query = st.sidebar.text_input("App-Namen suchen", key="search_input")
 
 if search_query:
-    # Suche im aktuellen DataFrame
-    search_df = df[df['App_Name'].str.contains(search_query, case=False, na=False)]
+    # 1. Suche im aktuellen DataFrame
+    raw_search_df = df[df['App_Name'].str.contains(search_query, case=False, na=False)]
     
-    if not search_df.empty:
-        # 1. Detail-Ansicht für den obersten Treffer
-        target_app = search_df.iloc[0]
-        st.markdown(f"### Top-Treffer: {target_app['App_Name']}")
+    if not raw_search_df.empty:
+        # NEU: Wir sortieren die Suchergebnisse nach Reviews (absteigend)
+        # So landet die populärste App (z.B. YouTube) immer auf Platz 1
+        search_df = raw_search_df.sort_values(by='Reviews', ascending=False)
         
-        # Mehr Infos in Spalten anzeigen
+        # Detail-Ansicht für den populärsten Treffer
+        target_app = search_df.iloc[0]
+        st.markdown(f"### Top-Treffer (nach Popularität): {target_app['App_Name']}")
+        
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Genre", target_app['Primary_Genre'])
         c2.metric("Rating", f"{target_app['Average_User_Rating']} ⭐")
         c3.metric("Größe", f"{target_app['Size_MB']:.1f} MB")
-        c4.metric("Preis", f"{target_app['Price']} €")
+        c4.metric("Reviews", f"{int(target_app['Reviews']):,}") # Zeigt Beliebtheit statt Preis
         
-        # 2. Liste aller weiteren Treffer anzeigen
+        # 2. Liste aller weiteren Treffer
         if len(search_df) > 1:
             st.write(f"---")
-            st.write(f"Alle gefundenen Treffer ({len(search_df)}):")
+            st.write(f"Alle gefundenen Treffer ({len(search_df)}), sortiert nach Reviews:")
             st.dataframe(
-                search_df[['App_Name', 'Primary_Genre', 'Size_MB', 'Price', 'Average_User_Rating']], 
+                search_df[['App_Name', 'Reviews', 'Primary_Genre', 'Size_MB', 'Average_User_Rating']], 
                 use_container_width=True
             )
     else:
-        st.error(f"Keine App gefunden, die '{search_query}' enthält (bei aktuellen Filtern).")
-
+        st.error(f"Keine App gefunden, die '{search_query}' enthält.")
 st.info("💡 Alle Daten werden live aus der SQL-Datenbank gefiltert.")
