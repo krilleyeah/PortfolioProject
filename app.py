@@ -102,4 +102,24 @@ if search_query:
             )
     else:
         st.error(f"Keine App gefunden, die '{search_query}' enthält.")
+
+
+# --- MODULE 6: HIDDEN GEMS (Geheimtipps) ---
+st.divider()
+st.subheader("💎 Echte Geheimtipps")
+st.write("Apps mit perfektem Rating, die noch nicht jeder kennt.")
+
+# Wir filtern den bestehenden DataFrame nach unseren Kriterien
+hidden_gems = df[
+    (df['Average_User_Rating'] == 5.0) & 
+    (df['Reviews'] >= 500) & 
+    (df['Reviews'] <= 10000)
+]
+
+if not hidden_gems.empty:
+    # Wir zeigen die Top 5 Geheimtipps sortiert nach der höchsten Review-Zahl in diesem Bereich
+    st.table(hidden_gems.nlargest(5, 'Reviews')[['App_Name', 'Reviews', 'Primary_Genre']])
+    st.success(f"Gefunden: {len(hidden_gems)} Apps mit perfektem 5-Sterne Rating!")
+else:
+    st.info("Momentan keine Geheimtipps in dieser Filter-Auswahl gefunden.")
 st.info("💡 Alle Daten werden live aus der SQL-Datenbank gefiltert.")
