@@ -10,7 +10,7 @@ def get_data(query):
     return df
 
 st.set_page_config(page_title="Chris' App Insights", layout="wide")
-st.title("🍎 App Store Analytics Dashboard")
+st.title("App Store Analytics Dashboard")
 
 # --- SIDEBAR ---
 st.sidebar.header("Filter & Steuerung")
@@ -48,11 +48,22 @@ st.subheader("🏆 Die True Giants (Meistbewertet)")
 top_apps = df.nlargest(10, 'Reviews')[['App_Name', 'Reviews', 'Average_User_Rating']]
 st.table(top_apps)
 
-# --- MODULE 4: GENRE HEATMAP (Verteilung) ---
-st.subheader("📊 Genre-Verteilung (Deine Heatmap)")
+# --- MODULE 4: GENRE VERTEILUNG (BALKENDIAGRAMM STATT PIE) ---
+st.subheader("📊 Genre-Verteilung")
 genre_counts = df['Primary_Genre'].value_counts().reset_index()
 genre_counts.columns = ['Genre', 'Anzahl']
-fig_pie = px.pie(genre_counts, values='Anzahl', names='Genre', hole=0.4, template="plotly_dark")
-st.plotly_chart(fig_pie, use_container_width=True)
 
-st.info("💡 Alle Daten werden live aus deiner SQL-Datenbank gefiltert.")
+# Hier ist die Änderung: Balken statt Torte für bessere Übersicht
+fig_bar = px.bar(
+    genre_counts.head(15), 
+    x='Anzahl', 
+    y='Genre', 
+    orientation='h',
+    color='Anzahl',
+    color_continuous_scale='Viridis',
+    template="plotly_dark"
+)
+fig_bar.update_layout(yaxis={'categoryorder':'total ascending'})
+st.plotly_chart(fig_bar, use_container_width=True)
+
+st.info("💡 Alle Daten werden live aus der SQL-Datenbank gefiltert.")
