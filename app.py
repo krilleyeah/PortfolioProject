@@ -6,6 +6,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 def get_data(query):
     conn = sqlite3.connect('apple_apps.db')
@@ -20,6 +22,17 @@ st.title("App Store Analytics Dashboard")
 st.sidebar.header("Filter & Steuerung")
 min_rating = st.sidebar.slider("Mindest-Rating", 0.0, 5.0, 4.0)
 min_reviews = st.sidebar.number_input("Mindestanzahl Reviews", 0, 1000000, 1000)
+
+# Berechnung der KPIs (am besten auch cachen)
+total_apps = get_data("SELECT COUNT(*) FROM apps").iloc[0,0]
+avg_rating = get_data("SELECT AVG(Average_User_Rating) FROM apps").iloc[0,0]
+avg_price = get_data("SELECT AVG(Price) FROM apps").iloc[0,0]
+
+# Anzeige in Spalten
+col1, col2, col3 = st.columns(3)
+col1.metric("Apps im Datensatz", f"{total_apps:,}")
+col2.metric("∅ Bewertung", f"{avg_rating:.2f} ⭐")
+col3.metric("∅ Preis", f"{avg_price:.2f} $")
 
 # --- DATEN HOLEN ---
 query = f"""
@@ -64,7 +77,7 @@ fig_bar = px.bar(
     y='Genre', 
     orientation='h',
     color='Anzahl',
-    color_continuous_scale='Viridis',
+    color_continuous_scale='Blues',
     template="plotly_dark"
 )
 fig_bar.update_layout(yaxis={'categoryorder':'total ascending'})
@@ -72,7 +85,7 @@ st.plotly_chart(fig_bar, use_container_width=True)
 
 # --- MODULE 5: APP-SUCHE (Erweitert & Sortiert) ---
 st.divider()
-st.subheader("🔍 Spezifische App-Details")
+st.subheader("🔍 Spezifische App-Details (Suche)")
 
 # Das Eingabefeld in der Sidebar
 search_query = st.sidebar.text_input("App-Namen suchen", key="search_input")
@@ -211,3 +224,69 @@ st.info("""
 - Ein kurzer Kasten bedeutet: Die Nutzer sind sich einig. 
 - Viele Punkte außerhalb (Outliers) bedeuten: Es gibt in diesem Genre extreme Qualitätsunterschiede.
 """)
+
+@st.cache_data # Das ist das Zauberwort!
+def get_genre_stats():
+    query = """
+    SELECT Primary_Genre, COUNT(*) as Count 
+    FROM apps 
+    GROUP BY Primary_Genre 
+    ORDER BY Count DESC 
+    LIMIT 10
+    """
+    return get_data(query)
+
+st.subheader("Top 10 App-Kategorien")
+genre_df = get_genre_stats()
+#st.bar_chart(data=genre_df, x='Primary_Genre', y='Count')
+st.bar_chart(data=genre_df, x='Primary_Genre', y='Count', color='Primary_Genre')
+
+# --- KORRELATIONSMATRIX (HEATMAP) ---
+# --- KORRELATIONSMATRIX (HEATMAP) ---
+st.write("---")
+st.header("Zusammenhänge analysieren")
+
+# 1. Daten aus der SQLite-DB holen
+# Wir filtern Apps ohne Rating aus, um die Statistik sauber zu halten
+query_corr = """
+SELECT Average_User_Rating, Reviews, Price, Size_MB 
+FROM apps 
+WHERE Average_User_Rating > 0
+"""
+df_corr = get_data(query_corr)
+
+if not df_corr.empty:
+    # 2. Die Korrelation berechnen (Das definiert die Variable 'corr')
+    corr = df_corr.corr()
+
+    # 3. Layout: Zwei Spalten für eine bessere Optik
+    col_map, col_text = st.columns([2, 1]) 
+
+    with col_map:
+        # Hier stellen wir die Größe der Grafik ein (5x4 ist kompakter)
+        fig, ax = plt.subplots(figsize=(5, 4)) 
+        
+        # Heatmap zeichnen
+        sns.heatmap(corr, annot=True, cmap='coolwarm', fmt=".2f", ax=ax, cbar=False)
+        
+        # Beschriftung schräg stellen, damit sie nicht überlappt
+        plt.xticks(rotation=45)
+        plt.yticks(rotation=0)
+        
+        # Grafik in Streamlit anzeigen (nicht die ganze Breite nutzen)
+        st.pyplot(fig, use_container_width=False)
+
+    with col_text:
+        st.write("### Was zeigt uns das?")
+        st.info("""
+        Diese Matrix zeigt, wie stark zwei Werte zusammenhängen:
+        *   **1.0**: Perfekter Zusammenhang.
+        *   **0.0**: Kein Zusammenhang.
+        *   **Negativ**: Wenn ein Wert steigt, fällt der andere.
+        
+        *Beispiel:* Hat ein höherer Preis wirklich Einfluss auf die Bewertung? Meistens ist die Korrelation hier sehr gering!++
+                
+        Die Analyse räumt mit dem Mythos auf, dass Erfolg im App Store käuflich oder durch reine Masse (Reviews) garantiert ist. Da selbst das Rating nur einen moderaten Einfluss hat, wird klar: Der wahre 'Impact' entsteht durch ein komplexes Zusammenspiel, bei dem die Qualität (Rating) die Basis bildet, aber erst durch die Reichweite (Reviews) skaliert wird.
+        """)
+else:
+    st.warning("Keine Daten für die Korrelationsmatrix verfügbar.")
