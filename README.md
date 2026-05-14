@@ -32,4 +32,4 @@ Instead of loading a massive CSV file into memory on every user request, this pr
 3.  **Portability:** The database is stored directly in the repository via Git LFS.
 
 Used kaggle data source (thank you!):
-[ttps://www.kaggle.com/datasets/gauthamp10/apple-appstore-apps?resource=download]
+[https://www.kaggle.com/datasets/gauthamp10/apple-appstore-apps?resource=download]
